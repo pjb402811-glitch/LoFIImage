@@ -28,7 +28,7 @@ export const ART_STYLES: ArtStylesMap = {
 };
 
 export const PRESETS: Preset[] = [
-  // Pair 1: Daily Life
+  // Pair 1: Daily Life (Study/Relax)
   {
     label: "새벽 공부",
     emoji: "🌙",
@@ -56,7 +56,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Cheerful", location: "Cafe Window Seat", time: "아침", weather: "맑음", people: "사람 없음", objects: "맛있는 빵, 커피, 밝은 우드톤 인테리어" }
   },
 
-  // Pair 3: Work & Play
+  // Pair 3: Retro/Work
   {
     label: "레트로 게임",
     emoji: "🎮",
@@ -70,7 +70,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Productive", location: "Modern Office", time: "늦은 오후", weather: "맑음", people: "열심히 일하는 사람들", objects: "식물, 노트북, 큰 창문" }
   },
 
-  // Pair 4: Travel/City
+  // Pair 4: City/Rustic
   {
     label: "도시의 노을",
     emoji: "🌆",
@@ -78,18 +78,18 @@ export const PRESETS: Preset[] = [
     data: { mood: "Melancholic", location: "Rooftop", time: "늦은 오후", weather: "맑음", objects: "난간, 맥주, 도시 야경" }
   },
   {
+    label: "시골 성당 마당",
+    emoji: "⛪",
+    category: 'daily',
+    data: { mood: "Peaceful", location: "Rustic Country Church Yard", time: "늦은 오후", weather: "맑음", objects: "오래된 벽돌 건물, 작은 화원, 나무 벤치, 십자가", people: "사람 없음" }
+  },
+
+  // Pair 5: Travel (Drive/Picnic)
+  {
     label: "해안도로 드라이브",
     emoji: "🚗",
     category: 'travel',
     data: { mood: "Refreshing", location: "Coastal Road", time: "아침", weather: "맑음", artStyle: "anime", objects: "컨버터블 차, 야자수, 바다" }
-  },
-
-  // Pair 5: Travel/Fantasy
-  {
-    label: "판타지 숲",
-    emoji: "🌲",
-    category: 'travel',
-    data: { mood: "Mysterious", location: "Glowing Forest", time: "밤", weather: "안개", animals: "정령", objects: "반딧불이, 거대한 나무" }
   },
   {
     label: "한강 피크닉",
@@ -98,13 +98,21 @@ export const PRESETS: Preset[] = [
     data: { mood: "Peaceful", location: "Park", time: "아침", weather: "맑음", objects: "초록색 잔디밭, 돗자리, 샌드위치, 자전거" }
   },
 
-  // Pair 6: Travel (Beach/Airport)
+  // Pair 6: Travel (Fantasy/Beach)
+  {
+    label: "판타지 숲",
+    emoji: "🌲",
+    category: 'travel',
+    data: { mood: "Mysterious", location: "Glowing Forest", time: "밤", weather: "안개", animals: "정령", objects: "반딧불이, 거대한 나무" }
+  },
   {
     label: "한적한 바다",
     emoji: "🌊",
     category: 'travel',
     data: { mood: "Peaceful", location: "Beach", time: "아침", weather: "맑음", objects: "야자수, 라디오", animals: "갈매기" }
   },
+
+  // Pair 7: Travel (Airport)
   {
     label: "공항 라운지",
     emoji: "✈️",
@@ -112,7 +120,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Excited", location: "Airport Lounge", time: "아침", weather: "맑음", objects: "통창 너머 비행기, 캐리어, 여권" }
   },
 
-  // Pair 7: Spring (Seasonal)
+  // Pair 8: Spring (Seasonal)
   {
     label: "벚꽃 흩날리는 봄",
     emoji: "🌸",
@@ -126,7 +134,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Refreshing", location: "Flower Shop", time: "아침", weather: "맑음", objects: "형형색색의 꽃, 물뿌리개, 앞치마", people: "소녀" }
   },
 
-  // Pair 8: Summer (Seasonal)
+  // Pair 9: Summer (Seasonal)
   {
     label: "시골집 마루 (여름)",
     emoji: "🍉",
@@ -140,7 +148,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Adventurous", location: "Camping Site", time: "밤", weather: "맑음", objects: "텐트, 모닥불, 밤하늘의 별, 통기타" }
   },
 
-  // Pair 9: Autumn (Seasonal)
+  // Pair 10: Autumn (Seasonal)
   {
     label: "낙엽 지는 벤치 (가을)",
     emoji: "🍂",
@@ -154,7 +162,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Quiet", location: "Old Bookstore", time: "늦은 오후", weather: "비", objects: "쌓인 책들, 노란 조명, 종이 냄새" }
   },
 
-  // Pair 10: Winter (Seasonal)
+  // Pair 11: Winter (Seasonal)
   {
     label: "따뜻한 벽난로 (겨울)",
     emoji: "🎄",

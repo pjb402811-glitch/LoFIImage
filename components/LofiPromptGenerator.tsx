@@ -3,7 +3,8 @@ import {
   Copy, RefreshCw, Moon, Coffee, Music, Sliders, Terminal, Save, 
   Monitor, Sparkles, FileText, Palette, MessageSquare, RotateCcw, 
   ChevronDown, ChevronUp, Youtube, Link as LinkIcon, User, Cat, Wand2,
-  Image as ImageIcon, Upload, Play, Dice5, History, Clock, ArrowRight, Zap
+  Image as ImageIcon, Upload, Play, Dice5, History, Clock, ArrowRight, Zap,
+  Video, Film
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
 import { PromptInputs, HistoryItem, PresetCategory } from '../types';
@@ -26,7 +27,9 @@ const LofiPromptGenerator: React.FC = () => {
   const [activeCategory, setActiveCategory] = useState<PresetCategory | 'all'>('all');
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showHistory, setShowHistory] = useState(false);
+  
+  // Tab state: 'image' | 'video' | 'history'
+  const [activeTab, setActiveTab] = useState<'image' | 'video' | 'history'>('image');
   
   // Changed to array to allow multiple open sections, initialized with all sections open
   const [activeAccordions, setActiveAccordions] = useState<string[]>([
@@ -34,16 +37,16 @@ const LofiPromptGenerator: React.FC = () => {
   ]);
   
   const [lyrics, setLyrics] = useState('');
-  const [benchmarkLinks, setBenchmarkLinks] = useState(['', '']); 
   const [benchmarkImage, setBenchmarkImage] = useState<string | null>(null);
   const [userFeedback, setUserFeedback] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false); 
-  const [isBenchmarking, setIsBenchmarking] = useState(false);
   const [isImageBenchmarking, setIsImageBenchmarking] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
   const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
+  
   const [generatedPrompt, setGeneratedPrompt] = useState('');
+  const [generatedVideoPrompt, setGeneratedVideoPrompt] = useState('');
   const [koreanExplanation, setKoreanExplanation] = useState('');
   const [copied, setCopied] = useState(false);
   
@@ -63,14 +66,15 @@ const LofiPromptGenerator: React.FC = () => {
       customModifiers: []
     });
     setLyrics('');
-    setBenchmarkLinks(['', '']);
     setBenchmarkImage(null);
     setUserFeedback('');
     setGeneratedPrompt('');
+    setGeneratedVideoPrompt('');
     setKoreanExplanation('');
     // Reset to all open
     setActiveAccordions(['artStyle', 'peopleAnimals', 'moodPlace', 'objects', 'timeWeather']);
     setActivePreset(null);
+    setActiveTab('image');
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
@@ -90,11 +94,12 @@ const LofiPromptGenerator: React.FC = () => {
     }).join(', ');
   };
 
-  const addToHistory = (prompt: string, explanation: string, currentInputs: PromptInputs) => {
+  const addToHistory = (prompt: string, videoPrompt: string, explanation: string, currentInputs: PromptInputs) => {
     const newItem: HistoryItem = {
       id: Date.now().toString(),
       timestamp: Date.now(),
       prompt,
+      videoPrompt,
       koreanExplanation: explanation,
       inputs: { ...currentInputs }
     };
@@ -104,8 +109,9 @@ const LofiPromptGenerator: React.FC = () => {
   const restoreHistory = (item: HistoryItem) => {
     setInputs(item.inputs);
     setGeneratedPrompt(item.prompt);
+    setGeneratedVideoPrompt(item.videoPrompt || '');
     setKoreanExplanation(item.koreanExplanation);
-    setShowHistory(false);
+    setActiveTab('image');
     setActivePreset(null); // Clear preset selection on restore
   };
 
@@ -123,9 +129,56 @@ const LofiPromptGenerator: React.FC = () => {
 
   const filteredPresets = PRESETS.filter(p => activeCategory === 'all' || p.category === activeCategory);
 
+  const generateVideoPrompt = (imagePrompt: string, inputs: PromptInputs, translatedInputs: Record<string, string>) => {
+    // 1. Base Cinemagraph instruction
+    let videoPrompt = "Cinemagraph, static camera, stillness, frozen background, continuous loop. ";
+
+    // 2. Detect movement elements based on inputs (simple heuristics)
+    const movements: string[] = [];
+    
+    // Helper to check if string contains keyword
+    const check = (str: string, keywords: string[]) => keywords.some(k => str.toLowerCase().includes(k));
+    
+    const combinedText = `${inputs.weather} ${inputs.objects} ${inputs.location} ${inputs.mood}`.toLowerCase();
+    
+    // Weather
+    if (check(inputs.weather, ['비', 'rain'])) movements.push("gentle falling rain drops");
+    if (check(inputs.weather, ['눈', 'snow'])) movements.push("softly falling snow");
+    if (check(inputs.weather, ['안개', 'fog'])) movements.push("slowly drifting fog");
+    
+    // Objects
+    if (check(inputs.objects, ['커피', 'coffee', '차', 'tea', 'mug', 'cup'])) movements.push("subtle steam rising from coffee cup");
+    if (check(inputs.objects, ['불', 'fire', 'candle', '모닥불', 'bonfire', 'wallace'])) movements.push("flickering fire flames, rising smoke");
+    if (check(inputs.objects, ['네온', 'neon', 'sign', 'light', 'lamp'])) movements.push("subtle light flicker");
+    
+    // Nature/Environment
+    if (check(inputs.location, ['바다', 'sea', 'ocean', 'beach', 'water'])) movements.push("gentle water ripples");
+    if (check(inputs.location, ['강', 'river', 'lake'])) movements.push("slow flowing water");
+    if (check(inputs.location, ['숲', 'forest', 'tree', 'plant', 'flower', 'blossom'])) movements.push("leaves swaying slightly in the breeze");
+    if (check(inputs.objects, ['커튼', 'curtain'])) movements.push("curtains blowing gently in the wind");
+    
+    // 3. Construct the prompt
+    if (movements.length > 0) {
+      videoPrompt += `Only the following elements move: ${movements.join(", ")}. `;
+    } else {
+      videoPrompt += "Minimal subtle movement. ";
+    }
+
+    // 4. Add scene context from image prompt (simplified)
+    // We reuse the 'sceneDesc' logic essentially, or just append the core description
+    videoPrompt += `Scene: ${translatedInputs.location || 'Lo-fi background'}, ${translatedInputs.time || ''}, ${translatedInputs.weather || ''}. `;
+    
+    // 5. Negative constraints
+    videoPrompt += "--no camera movement, zooming, panning, tilting, fast motion, character movement, blinking, shaking.";
+
+    return videoPrompt;
+  };
+
   const handleGenerate = async (data: PromptInputs = inputs) => {
     setIsGeneratingPrompt(true);
-    setShowHistory(false);
+    // Automatically switch to image tab on new generation
+    if (activeTab === 'history') setActiveTab('image');
+    
     try {
       const baseStyle = ART_STYLES[data.artStyle]?.prompt || '';
       const koreanToTranslate: string[] = [];
@@ -200,15 +253,23 @@ const LofiPromptGenerator: React.FC = () => {
 
       const fullContent = [mainDesc, sceneDesc, charDesc, objDesc].filter(Boolean).join('');
       
-      // Customize prompt structure slightly based on art style
+      // Image Prompt Construction
       let finalPrompt = '';
       if (data.artStyle === 'realistic_4k') {
          finalPrompt = `${baseStyle} ${fullContent}${modifierDesc}. Photorealistic, ultra detailed, 8k. --no people, cartoon, drawing, anime, blurry, low resolution${ratioParam}`;
       } else {
          finalPrompt = `${baseStyle}${modifierDesc} ${fullContent}. Focus on atmosphere. --no people, distracting elements, harsh lights, vibrant colors${ratioParam}`;
       }
+      
+      // Video Prompt Construction
+      const videoPrompt = generateVideoPrompt(finalPrompt, data, {
+        location: locationEn,
+        time: timeEn,
+        weather: weatherEn
+      });
 
       setGeneratedPrompt(finalPrompt);
+      setGeneratedVideoPrompt(videoPrompt);
 
       let krText = "";
       if (data.weather) krText += `${data.weather} 날씨의 `;
@@ -224,7 +285,7 @@ const LofiPromptGenerator: React.FC = () => {
       
       if (!krText) krText = "생성된 프롬프트 정보를 확인하세요.";
       setKoreanExplanation(krText);
-      addToHistory(finalPrompt, krText, data);
+      addToHistory(finalPrompt, videoPrompt, krText, data);
 
     } catch (error) {
       console.error("Generation Error", error);
@@ -279,9 +340,8 @@ const LofiPromptGenerator: React.FC = () => {
       };
       
       setInputs(newInputs);
-      setActivePreset(null); // Auto gen is not a preset
+      setActivePreset(null); 
       handleGenerate(newInputs);
-      // Ensure all accordions are open to show the generated values
       setActiveAccordions(['artStyle', 'peopleAnimals', 'moodPlace', 'objects', 'timeWeather']);
       
     } catch (error) {
@@ -337,7 +397,7 @@ const LofiPromptGenerator: React.FC = () => {
       }
       
       setInputs(newInputs);
-      setActivePreset(null); // Custom changes invalidate preset
+      setActivePreset(null);
       await handleGenerate(newInputs);
       setUserFeedback('');
       
@@ -418,7 +478,7 @@ const LofiPromptGenerator: React.FC = () => {
           `Image Style: ${result.styleModifier}`
         ]
       }));
-      setActivePreset(null); // Benchmarking overrides preset
+      setActivePreset(null); 
 
     } catch (error) {
       console.error("Gemini Image Benchmark Error", error);
@@ -483,7 +543,6 @@ const LofiPromptGenerator: React.FC = () => {
       setInputs(newInputs);
       setActivePreset(null);
       setIsAnalyzing(false);
-      // Ensure specific accordion is open to show result, though now all are open by default
       if (!activeAccordions.includes('peopleAnimals')) {
          toggleAccordion('peopleAnimals');
       }
@@ -493,16 +552,19 @@ const LofiPromptGenerator: React.FC = () => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setInputs(prev => ({ ...prev, [name]: value }));
-    setActivePreset(null); // Manual change deselects preset
+    setActivePreset(null); 
   };
 
   const copyToClipboard = () => {
     try {
+      // Copy the text visible in the active tab (Image Prompt or Video Prompt)
+      const textToCopy = activeTab === 'video' ? generatedVideoPrompt : generatedPrompt;
+      
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(generatedPrompt);
+        navigator.clipboard.writeText(textToCopy);
       } else {
         const textArea = document.createElement("textarea");
-        textArea.value = generatedPrompt;
+        textArea.value = textToCopy;
         document.body.appendChild(textArea);
         textArea.select();
         document.execCommand('copy');
@@ -577,7 +639,7 @@ const LofiPromptGenerator: React.FC = () => {
                    ))}
                  </div>
 
-                 {/* Updated: 2-row grid layout for presets with filtering */}
+                 {/* 2-row grid layout for presets */}
                  <div className="grid grid-rows-2 grid-flow-col gap-2 overflow-x-auto pb-2 custom-scrollbar snap-x min-h-[90px]">
                     {filteredPresets.map((preset, idx) => (
                       <button 
@@ -808,25 +870,32 @@ const LofiPromptGenerator: React.FC = () => {
              {/* Content Container */}
              <div className="h-full bg-slate-900/40 rounded-3xl p-6 flex flex-col relative z-10">
                 <div className="flex justify-between items-center mb-4 flex-shrink-0 border-b border-white/5 pb-4">
-                  <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
                     <button 
-                      onClick={() => setShowHistory(false)}
-                      className={`text-sm font-bold uppercase tracking-widest flex items-center transition-colors ${!showHistory ? 'text-white border-b-2 border-purple-500 pb-1' : 'text-slate-500 hover:text-slate-300'}`}
+                      onClick={() => setActiveTab('image')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center transition-all ${activeTab === 'image' ? 'bg-purple-500 text-white shadow-lg shadow-purple-900/40' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                     >
-                      <Terminal className="w-4 h-4 mr-2" /> Prompt
+                      <Terminal className="w-3.5 h-3.5 mr-1.5" /> Image Prompt
                     </button>
                     <button 
-                      onClick={() => setShowHistory(true)}
-                      className={`text-sm font-bold uppercase tracking-widest flex items-center transition-colors ${showHistory ? 'text-white border-b-2 border-blue-500 pb-1' : 'text-slate-500 hover:text-slate-300'}`}
+                      onClick={() => setActiveTab('video')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center transition-all ${activeTab === 'video' ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/40' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
                     >
-                      <History className="w-4 h-4 mr-2" /> History
-                      {history.length > 0 && <span className="ml-2 bg-slate-800 text-slate-400 text-[10px] px-1.5 py-0.5 rounded-full">{history.length}</span>}
+                      <Video className="w-3.5 h-3.5 mr-1.5" /> Video Prompt
+                    </button>
+                    <div className="w-px h-6 bg-slate-700 mx-1"></div>
+                    <button 
+                      onClick={() => setActiveTab('history')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center transition-all ${activeTab === 'history' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-white hover:bg-slate-800'}`}
+                    >
+                      <History className="w-3.5 h-3.5 mr-1.5" /> History
+                      {history.length > 0 && <span className="ml-2 bg-slate-800 text-slate-400 text-[10px] px-1.5 py-0.5 rounded-full border border-slate-600">{history.length}</span>}
                     </button>
                   </div>
-                  {!showHistory && <div className="text-xs text-slate-600 font-mono">Len: {generatedPrompt.length}</div>}
+                  {activeTab !== 'history' && <div className="text-xs text-slate-600 font-mono">Len: {activeTab === 'video' ? generatedVideoPrompt.length : generatedPrompt.length}</div>}
                 </div>
 
-                {showHistory ? (
+                {activeTab === 'history' ? (
                    // History View
                    <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
                      {history.length === 0 ? (
@@ -847,33 +916,36 @@ const LofiPromptGenerator: React.FC = () => {
                                복원
                              </button>
                            </div>
-                           <p className="text-xs text-slate-300 font-mono line-clamp-2 opacity-80 group-hover:opacity-100">{item.prompt}</p>
+                           <p className="text-xs text-slate-300 font-mono line-clamp-2 opacity-80 group-hover:opacity-100 mb-1">{item.prompt}</p>
+                           {item.videoPrompt && <p className="text-[10px] text-blue-300 font-mono line-clamp-1 opacity-60"><Video className="w-3 h-3 inline mr-1" />{item.videoPrompt}</p>}
                          </div>
                        ))
                      )}
                    </div>
                 ) : (
-                   // Prompt View
+                   // Prompt View (Image or Video)
                    <>
                     <div className="flex-1 bg-black/40 rounded-xl p-5 mb-4 border border-slate-700/50 font-mono text-sm leading-relaxed overflow-y-auto custom-scrollbar text-slate-300 shadow-inner relative">
-                      {generatedPrompt ? (
+                      {(activeTab === 'image' ? generatedPrompt : generatedVideoPrompt) ? (
                         <>
                           <div className="absolute top-2 right-2 flex space-x-1">
                              <div className="w-2.5 h-2.5 rounded-full bg-red-500/50"></div>
                              <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50"></div>
                              <div className="w-2.5 h-2.5 rounded-full bg-green-500/50"></div>
                           </div>
-                          <span className="text-green-500 font-bold select-none mr-2">$</span>
-                          {generatedPrompt}
-                          <span className="animate-pulse inline-block w-2 h-4 ml-1 bg-green-500/80 align-middle"></span>
+                          <span className={`font-bold select-none mr-2 ${activeTab === 'video' ? 'text-blue-500' : 'text-green-500'}`}>{activeTab === 'video' ? 'video>' : 'image>'}</span>
+                          {activeTab === 'image' ? generatedPrompt : generatedVideoPrompt}
+                          <span className={`animate-pulse inline-block w-2 h-4 ml-1 align-middle ${activeTab === 'video' ? 'bg-blue-500/80' : 'bg-green-500/80'}`}></span>
                         </>
                       ) : (
                         <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4">
                           <div className="p-4 bg-slate-900/50 rounded-full border border-slate-800">
-                             <Terminal className="w-8 h-8 opacity-50" />
+                             {activeTab === 'video' ? <Film className="w-8 h-8 opacity-50" /> : <Terminal className="w-8 h-8 opacity-50" />}
                           </div>
                           <div className="text-center">
-                            <p className="text-sm font-medium text-slate-500 mb-1">프롬프트가 생성되지 않았습니다</p>
+                            <p className="text-sm font-medium text-slate-500 mb-1">
+                               {activeTab === 'video' ? '영상 프롬프트가 대기 중입니다' : '이미지 프롬프트가 대기 중입니다'}
+                            </p>
                             <p className="text-xs text-slate-600">
                               좌측 옵션을 선택하고 <span className="text-purple-400 font-bold">생성 버튼</span>을 눌러주세요.
                             </p>
@@ -883,8 +955,12 @@ const LofiPromptGenerator: React.FC = () => {
                     </div>
 
                     <div className="flex-shrink-0 space-y-4">
-                      <button onClick={copyToClipboard} disabled={!generatedPrompt} className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg ${copied ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 hover:shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'}`}>
-                        {copied ? <><Save className="w-4 h-4" /><span>클립보드에 복사 완료!</span></> : <><Copy className="w-4 h-4" /><span>프롬프트 복사 (Copy Prompt)</span></>}
+                      <button 
+                        onClick={copyToClipboard} 
+                        disabled={!(activeTab === 'image' ? generatedPrompt : generatedVideoPrompt)} 
+                        className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg ${copied ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 hover:shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'}`}
+                      >
+                        {copied ? <><Save className="w-4 h-4" /><span>클립보드에 복사 완료!</span></> : <><Copy className="w-4 h-4" /><span>{activeTab === 'video' ? '영상 프롬프트 복사' : '이미지 프롬프트 복사'}</span></>}
                       </button>
 
                       <div className="relative group">

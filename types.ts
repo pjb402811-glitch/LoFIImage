@@ -33,6 +33,7 @@ export interface HistoryItem {
   id: string;
   timestamp: number;
   prompt: string;
+  videoPrompt?: string; // Added field for video specific prompt
   inputs: PromptInputs;
   koreanExplanation: string;
 }
