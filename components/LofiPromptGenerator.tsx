@@ -536,8 +536,8 @@ const LofiPromptGenerator: React.FC = () => {
                   <Music className="w-6 h-6 text-purple-300" />
                 </div>
                 <div>
-                  <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Lo-fi Flow</h1>
-                  <p className="text-xs text-slate-400 font-medium tracking-wide">Gemini & Chillhop Studio</p>
+                  <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Lofi Studio</h1>
+                  <p className="text-xs text-slate-400 font-medium tracking-wide">AI Mood & Prompt Generator</p>
                 </div>
               </div>
               <button onClick={handleReset} className="text-xs font-bold flex items-center text-slate-400 hover:text-white transition-colors bg-slate-700/40 hover:bg-slate-700/60 px-3 py-1.5 rounded-full border border-slate-600/50">

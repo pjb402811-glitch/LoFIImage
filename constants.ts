@@ -98,35 +98,7 @@ export const PRESETS: Preset[] = [
     data: { mood: "Peaceful", location: "Park", time: "아침", weather: "맑음", objects: "초록색 잔디밭, 돗자리, 샌드위치, 자전거" }
   },
 
-  // Pair 6: Seasonal (Winter/Spring)
-  {
-    label: "따뜻한 벽난로 (겨울)",
-    emoji: "🎄",
-    category: 'season',
-    data: { mood: "Cozy", location: "Living Room", time: "밤", weather: "눈", objects: "벽난로, 장작불, 크리스마스 장식, 선물 상자" }
-  },
-  {
-    label: "벚꽃 흩날리는 봄",
-    emoji: "🌸",
-    category: 'season',
-    data: { mood: "Romantic", location: "Cherry Blossom Street", time: "늦은 오후", weather: "맑음", objects: "핑크빛 벚꽃, 흩날리는 꽃잎" }
-  },
-
-  // Pair 7: Seasonal (Summer/Autumn)
-  {
-    label: "시골집 마루 (여름)",
-    emoji: "🍉",
-    category: 'season',
-    data: { mood: "Nostalgic", location: "Korean Countryside House", time: "늦은 오후", weather: "맑음", objects: "수박, 선풍기, 매미 소리, 나무 마루" }
-  },
-  {
-    label: "낙엽 지는 벤치 (가을)",
-    emoji: "🍂",
-    category: 'season',
-    data: { mood: "Sentimental", location: "Autumn Park", time: "늦은 오후", weather: "맑음", objects: "붉은 단풍, 나무 벤치, 책, 트렌치 코트" }
-  },
-
-  // Pair 8: Travel
+  // Pair 6: Travel (Beach/Airport)
   {
     label: "한적한 바다",
     emoji: "🌊",
@@ -140,12 +112,60 @@ export const PRESETS: Preset[] = [
     data: { mood: "Excited", location: "Airport Lounge", time: "아침", weather: "맑음", objects: "통창 너머 비행기, 캐리어, 여권" }
   },
 
-  // Pair 9: Seasonal (New)
+  // Pair 7: Spring (Seasonal)
   {
-    label: "눈 내리는 거리",
+    label: "벚꽃 흩날리는 봄",
+    emoji: "🌸",
+    category: 'season',
+    data: { mood: "Romantic", location: "Cherry Blossom Street", time: "늦은 오후", weather: "맑음", objects: "핑크빛 벚꽃, 흩날리는 꽃잎" }
+  },
+  {
+    label: "따스한 꽃집 (봄)",
+    emoji: "💐",
+    category: 'season',
+    data: { mood: "Refreshing", location: "Flower Shop", time: "아침", weather: "맑음", objects: "형형색색의 꽃, 물뿌리개, 앞치마", people: "소녀" }
+  },
+
+  // Pair 8: Summer (Seasonal)
+  {
+    label: "시골집 마루 (여름)",
+    emoji: "🍉",
+    category: 'season',
+    data: { mood: "Nostalgic", location: "Korean Countryside House", time: "늦은 오후", weather: "맑음", objects: "수박, 선풍기, 매미 소리, 나무 마루" }
+  },
+  {
+    label: "여름 밤 캠핑",
+    emoji: "⛺",
+    category: 'season',
+    data: { mood: "Adventurous", location: "Camping Site", time: "밤", weather: "맑음", objects: "텐트, 모닥불, 밤하늘의 별, 통기타" }
+  },
+
+  // Pair 9: Autumn (Seasonal)
+  {
+    label: "낙엽 지는 벤치 (가을)",
+    emoji: "🍂",
+    category: 'season',
+    data: { mood: "Sentimental", location: "Autumn Park", time: "늦은 오후", weather: "맑음", objects: "붉은 단풍, 나무 벤치, 책, 트렌치 코트" }
+  },
+  {
+    label: "비 오는 헌책방 (가을)",
+    emoji: "📚",
+    category: 'season',
+    data: { mood: "Quiet", location: "Old Bookstore", time: "늦은 오후", weather: "비", objects: "쌓인 책들, 노란 조명, 종이 냄새" }
+  },
+
+  // Pair 10: Winter (Seasonal)
+  {
+    label: "따뜻한 벽난로 (겨울)",
+    emoji: "🎄",
+    category: 'season',
+    data: { mood: "Cozy", location: "Living Room", time: "밤", weather: "눈", objects: "벽난로, 장작불, 크리스마스 장식, 선물 상자" }
+  },
+  {
+    label: "눈 내리는 거리 (겨울)",
     emoji: "❄️",
     category: 'season',
-    data: { mood: "Sentimental", location: "Snowy City Street", time: "밤", weather: "눈", objects: "가로등, 쌓인 눈, 발자국" }
+    data: { mood: "Sentimental", location: "Snowy City Street", time: "밤", weather: "눈", objects: "가로등, 쌓인 눈, 발자국, 목도리" }
   }
 ];
 
