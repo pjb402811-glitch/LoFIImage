@@ -1,4 +1,4 @@
-import { ArtStylesMap, KeywordMap } from './types';
+import { ArtStylesMap, KeywordMap, Preset } from './types';
 
 export const ART_STYLES: ArtStylesMap = {
   anime: { 
@@ -20,8 +20,134 @@ export const ART_STYLES: ArtStylesMap = {
   cinematic: { 
     label: 'Cinematic Photo', 
     prompt: 'Cinematic photography, photorealistic, 35mm film, bokeh, golden hour, highly detailed, 8k resolution, atmospheric lighting.' 
+  },
+  realistic_4k: {
+    label: '4K Realistic',
+    prompt: 'Hyper-realistic photography, 4k resolution, sharp focus, incredibly detailed textures, ray tracing, architectural digest style, professional lighting, clean and crisp, unreal engine 5 render.'
   }
 };
+
+export const PRESETS: Preset[] = [
+  // Pair 1: Daily Life
+  {
+    label: "새벽 공부",
+    emoji: "🌙",
+    category: 'daily',
+    data: { mood: "Deep Focus", location: "Cluttered Desk", time: "새벽", weather: "비", people: "학생", objects: "노트북, 커피, 스탠드" }
+  },
+  {
+    label: "나른한 주말 아침",
+    emoji: "☀️",
+    category: 'daily',
+    data: { mood: "Relaxed", location: "Bedroom", time: "아침", weather: "맑음", people: "사람 없음", animals: "고양이", objects: "하얀 커튼, 김이 나는 머그잔" }
+  },
+
+  // Pair 2: Cafe Life
+  {
+    label: "비 오는 카페",
+    emoji: "☕",
+    category: 'daily',
+    data: { mood: "Chill", location: "Cozy Cafe", time: "늦은 오후", weather: "비", people: "사람 없음", objects: "따뜻한 커피, 책, 창문의 빗방울" }
+  },
+  {
+    label: "햇살 가득 브런치",
+    emoji: "🥯",
+    category: 'daily',
+    data: { mood: "Cheerful", location: "Cafe Window Seat", time: "아침", weather: "맑음", people: "사람 없음", objects: "맛있는 빵, 커피, 밝은 우드톤 인테리어" }
+  },
+
+  // Pair 3: Work & Play
+  {
+    label: "레트로 게임",
+    emoji: "🎮",
+    category: 'daily',
+    data: { mood: "Nostalgic", location: "90s Bedroom", time: "밤", artStyle: "pixel", objects: "CRT TV, Game Console, Posters" }
+  },
+  {
+    label: "탁 트인 공유 오피스",
+    emoji: "💻",
+    category: 'daily',
+    data: { mood: "Productive", location: "Modern Office", time: "늦은 오후", weather: "맑음", people: "열심히 일하는 사람들", objects: "식물, 노트북, 큰 창문" }
+  },
+
+  // Pair 4: Travel/City
+  {
+    label: "도시의 노을",
+    emoji: "🌆",
+    category: 'daily',
+    data: { mood: "Melancholic", location: "Rooftop", time: "늦은 오후", weather: "맑음", objects: "난간, 맥주, 도시 야경" }
+  },
+  {
+    label: "해안도로 드라이브",
+    emoji: "🚗",
+    category: 'travel',
+    data: { mood: "Refreshing", location: "Coastal Road", time: "아침", weather: "맑음", artStyle: "anime", objects: "컨버터블 차, 야자수, 바다" }
+  },
+
+  // Pair 5: Travel/Fantasy
+  {
+    label: "판타지 숲",
+    emoji: "🌲",
+    category: 'travel',
+    data: { mood: "Mysterious", location: "Glowing Forest", time: "밤", weather: "안개", animals: "정령", objects: "반딧불이, 거대한 나무" }
+  },
+  {
+    label: "한강 피크닉",
+    emoji: "🧺",
+    category: 'travel',
+    data: { mood: "Peaceful", location: "Park", time: "아침", weather: "맑음", objects: "초록색 잔디밭, 돗자리, 샌드위치, 자전거" }
+  },
+
+  // Pair 6: Seasonal (Winter/Spring)
+  {
+    label: "따뜻한 벽난로 (겨울)",
+    emoji: "🎄",
+    category: 'season',
+    data: { mood: "Cozy", location: "Living Room", time: "밤", weather: "눈", objects: "벽난로, 장작불, 크리스마스 장식, 선물 상자" }
+  },
+  {
+    label: "벚꽃 흩날리는 봄",
+    emoji: "🌸",
+    category: 'season',
+    data: { mood: "Romantic", location: "Cherry Blossom Street", time: "늦은 오후", weather: "맑음", objects: "핑크빛 벚꽃, 흩날리는 꽃잎" }
+  },
+
+  // Pair 7: Seasonal (Summer/Autumn)
+  {
+    label: "시골집 마루 (여름)",
+    emoji: "🍉",
+    category: 'season',
+    data: { mood: "Nostalgic", location: "Korean Countryside House", time: "늦은 오후", weather: "맑음", objects: "수박, 선풍기, 매미 소리, 나무 마루" }
+  },
+  {
+    label: "낙엽 지는 벤치 (가을)",
+    emoji: "🍂",
+    category: 'season',
+    data: { mood: "Sentimental", location: "Autumn Park", time: "늦은 오후", weather: "맑음", objects: "붉은 단풍, 나무 벤치, 책, 트렌치 코트" }
+  },
+
+  // Pair 8: Travel
+  {
+    label: "한적한 바다",
+    emoji: "🌊",
+    category: 'travel',
+    data: { mood: "Peaceful", location: "Beach", time: "아침", weather: "맑음", objects: "야자수, 라디오", animals: "갈매기" }
+  },
+  {
+    label: "공항 라운지",
+    emoji: "✈️",
+    category: 'travel',
+    data: { mood: "Excited", location: "Airport Lounge", time: "아침", weather: "맑음", objects: "통창 너머 비행기, 캐리어, 여권" }
+  },
+
+  // Pair 9: Seasonal (New)
+  {
+    label: "눈 내리는 거리",
+    emoji: "❄️",
+    category: 'season',
+    data: { mood: "Sentimental", location: "Snowy City Street", time: "밤", weather: "눈", objects: "가로등, 쌓인 눈, 발자국" }
+  }
+];
 
 export const KEYWORD_MAP: KeywordMap = {
   '밤샘 공부': 'late night study session, deep focus',

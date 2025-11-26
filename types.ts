@@ -19,3 +19,20 @@ export interface ArtStyleDef {
 export type ArtStylesMap = Record<string, ArtStyleDef>;
 
 export type KeywordMap = Record<string, string>;
+
+export type PresetCategory = 'daily' | 'travel' | 'season';
+
+export interface Preset {
+  label: string;
+  emoji: string;
+  category: PresetCategory;
+  data: Partial<PromptInputs>;
+}
+
+export interface HistoryItem {
+  id: string;
+  timestamp: number;
+  prompt: string;
+  inputs: PromptInputs;
+  koreanExplanation: string;
+}

@@ -3,14 +3,13 @@ import {
   Copy, RefreshCw, Moon, Coffee, Music, Sliders, Terminal, Save, 
   Monitor, Sparkles, FileText, Palette, MessageSquare, RotateCcw, 
   ChevronDown, ChevronUp, Youtube, Link as LinkIcon, User, Cat, Wand2,
-  Image as ImageIcon, Upload, Play, Dice5
+  Image as ImageIcon, Upload, Play, Dice5, History, Clock, ArrowRight, Zap
 } from 'lucide-react';
 import { GoogleGenAI, Type } from "@google/genai";
-import { PromptInputs } from '../types';
-import { ART_STYLES, KEYWORD_MAP } from '../constants';
+import { PromptInputs, HistoryItem, PresetCategory } from '../types';
+import { ART_STYLES, KEYWORD_MAP, PRESETS } from '../constants';
 
 const LofiPromptGenerator: React.FC = () => {
-  // Changed default values to empty strings to avoid forcing a specific mood/weather
   const [inputs, setInputs] = useState<PromptInputs>({
     mood: '',
     location: '',
@@ -23,8 +22,17 @@ const LofiPromptGenerator: React.FC = () => {
     artStyle: 'anime', 
     customModifiers: [] 
   });
+  const [activePreset, setActivePreset] = useState<string | null>(null);
+  const [activeCategory, setActiveCategory] = useState<PresetCategory | 'all'>('all');
 
-  const [activeAccordion, setActiveAccordion] = useState<string | null>('artStyle');
+  const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  
+  // Changed to array to allow multiple open sections, initialized with all sections open
+  const [activeAccordions, setActiveAccordions] = useState<string[]>([
+    'artStyle', 'peopleAnimals', 'moodPlace', 'objects', 'timeWeather'
+  ]);
+  
   const [lyrics, setLyrics] = useState('');
   const [benchmarkLinks, setBenchmarkLinks] = useState(['', '']); 
   const [benchmarkImage, setBenchmarkImage] = useState<string | null>(null);
@@ -34,20 +42,12 @@ const LofiPromptGenerator: React.FC = () => {
   const [isImageBenchmarking, setIsImageBenchmarking] = useState(false);
   const [isRefining, setIsRefining] = useState(false);
   const [isAutoGenerating, setIsAutoGenerating] = useState(false);
+  const [isGeneratingPrompt, setIsGeneratingPrompt] = useState(false);
   const [generatedPrompt, setGeneratedPrompt] = useState('');
   const [koreanExplanation, setKoreanExplanation] = useState('');
   const [copied, setCopied] = useState(false);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  const translateInput = (text: string) => {
-    if (!text) return '';
-    const parts = text.split(',').map(part => part.trim());
-    const translatedParts = parts.map(part => {
-      return KEYWORD_MAP[part] || KEYWORD_MAP[part.replace(/\s/g, '')] || part;
-    });
-    return translatedParts.join(', ');
-  };
 
   const handleReset = () => {
     setInputs({
@@ -68,75 +68,190 @@ const LofiPromptGenerator: React.FC = () => {
     setUserFeedback('');
     setGeneratedPrompt('');
     setKoreanExplanation('');
-    setActiveAccordion('artStyle');
+    // Reset to all open
+    setActiveAccordions(['artStyle', 'peopleAnimals', 'moodPlace', 'objects', 'timeWeather']);
+    setActivePreset(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   };
 
-  // Main Prompt Generation Logic
-  const handleGenerate = (data: PromptInputs = inputs) => {
-    const baseStyle = ART_STYLES[data.artStyle]?.prompt || '';
-    
-    const moodEn = translateInput(data.mood);
-    const locationEn = translateInput(data.location);
-    const objectsEn = translateInput(data.objects);
-    const peopleEn = translateInput(data.people);
-    const animalsEn = translateInput(data.animals);
-    const timeEn = translateInput(data.time);
-    const weatherEn = translateInput(data.weather);
-    const modifiersEn = data.customModifiers.join(', ');
-    
-    const ratioParam = data.ratio ? ` --ar ${data.ratio}` : '';
+  const hasKorean = (text: string) => /[ㄱ-ㅎ|ㅏ-ㅣ|가-힣]/.test(text);
 
-    let mainDesc = "";
-    if (moodEn) mainDesc += `${moodEn}`;
-    
-    let sceneDesc = "";
-    const locationPart = locationEn ? ` situated at ${locationEn}` : "";
-    const timePart = timeEn ? ` during ${timeEn}` : "";
-    const weatherPart = weatherEn ? ` with ${weatherEn} weather` : "";
-    
-    if (locationPart || timePart || weatherPart) {
-      sceneDesc = `. A scene${locationPart}${timePart}${weatherPart}`;
+  const prepareField = (text: string, collection: string[]) => {
+    if (!text) return '';
+    const parts = text.split(',').map(part => part.trim());
+    return parts.map(part => {
+      const mapped = KEYWORD_MAP[part] || KEYWORD_MAP[part.replace(/\s/g, '')];
+      if (mapped) return mapped;
+      if (hasKorean(part)) {
+        collection.push(part);
+        return `__TRANS_${part}__`;
+      }
+      return part;
+    }).join(', ');
+  };
+
+  const addToHistory = (prompt: string, explanation: string, currentInputs: PromptInputs) => {
+    const newItem: HistoryItem = {
+      id: Date.now().toString(),
+      timestamp: Date.now(),
+      prompt,
+      koreanExplanation: explanation,
+      inputs: { ...currentInputs }
+    };
+    setHistory(prev => [newItem, ...prev].slice(0, 10)); // Keep last 10
+  };
+
+  const restoreHistory = (item: HistoryItem) => {
+    setInputs(item.inputs);
+    setGeneratedPrompt(item.prompt);
+    setKoreanExplanation(item.koreanExplanation);
+    setShowHistory(false);
+    setActivePreset(null); // Clear preset selection on restore
+  };
+
+  const applyPreset = (presetData: Partial<PromptInputs>) => {
+    const matchedPreset = PRESETS.find(p => JSON.stringify(p.data) === JSON.stringify(presetData));
+    if (matchedPreset) {
+      setActivePreset(matchedPreset.label);
     }
     
-    let charDesc = "";
-    if (peopleEn) charDesc += `. ${peopleEn} is visible in the frame`;
-    if (animalsEn) charDesc += `. ${animalsEn} is relaxing nearby`;
+    setInputs(prev => ({
+      ...prev,
+      ...presetData
+    }));
+  };
 
-    let objDesc = "";
-    if (objectsEn) objDesc += `. Featuring ${objectsEn}`;
+  const filteredPresets = PRESETS.filter(p => activeCategory === 'all' || p.category === activeCategory);
 
-    let modifierDesc = "";
-    if (modifiersEn) modifierDesc += ` ${modifiersEn}.`;
+  const handleGenerate = async (data: PromptInputs = inputs) => {
+    setIsGeneratingPrompt(true);
+    setShowHistory(false);
+    try {
+      const baseStyle = ART_STYLES[data.artStyle]?.prompt || '';
+      const koreanToTranslate: string[] = [];
 
-    const fullContent = [mainDesc, sceneDesc, charDesc, objDesc].filter(Boolean).join('');
-    
-    const finalPrompt = `${baseStyle}${modifierDesc} ${fullContent}. Focus on atmosphere. --no people, distracting elements, harsh lights, vibrant colors${ratioParam}`;
-    setGeneratedPrompt(finalPrompt);
+      let moodEn = prepareField(data.mood, koreanToTranslate);
+      let locationEn = prepareField(data.location, koreanToTranslate);
+      let objectsEn = prepareField(data.objects, koreanToTranslate);
+      let peopleEn = prepareField(data.people, koreanToTranslate);
+      let animalsEn = prepareField(data.animals, koreanToTranslate);
+      let timeEn = prepareField(data.time, koreanToTranslate);
+      let weatherEn = prepareField(data.weather, koreanToTranslate);
+      
+      const modifiersProcessed = data.customModifiers.map(mod => {
+        if (hasKorean(mod)) {
+          koreanToTranslate.push(mod);
+          return `__TRANS_${mod}__`;
+        }
+        return mod;
+      });
+      let modifiersEn = modifiersProcessed.join(', ');
 
-    let krText = "";
-    if (data.weather) krText += `${data.weather} 날씨의 `;
-    if (data.time) krText += `${data.time}, `;
-    if (data.location) krText += `${data.location}에서 `;
-    if (data.mood) krText += `'${data.mood}' 분위기를 담고 있습니다. `;
-    if (data.people || data.animals) krText += `\n등장 요소: ${[data.people, data.animals].filter(Boolean).join(', ')}. `;
-    if (data.objects) krText += `\n소품: ${data.objects}.`;
-    
-    if (data.customModifiers.length > 0) {
-      krText += `\n\n✨ AI 수정/벤치마킹 반영됨:\n${data.customModifiers.map(m => `- ${m}`).join('\n')}`;
+      let translationMap: Record<string, string> = {};
+      if (koreanToTranslate.length > 0) {
+        const uniqueTerms = [...new Set(koreanToTranslate)];
+        const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+        const response = await ai.models.generateContent({
+          model: 'gemini-2.5-flash',
+          contents: `Translate the following Korean terms into descriptive English keywords suitable for an AI image prompt (Midjourney). Return ONLY a JSON object where keys are the Korean terms and values are the English translations. Terms: ${JSON.stringify(uniqueTerms)}`,
+          config: {
+            responseMimeType: "application/json"
+          }
+        });
+        translationMap = JSON.parse(response.text);
+      }
+
+      const replace = (text: string) => {
+        return text.replace(/__TRANS_(.*?)__/g, (_, term) => translationMap[term] || term);
+      };
+
+      moodEn = replace(moodEn);
+      locationEn = replace(locationEn);
+      objectsEn = replace(objectsEn);
+      peopleEn = replace(peopleEn);
+      animalsEn = replace(animalsEn);
+      timeEn = replace(timeEn);
+      weatherEn = replace(weatherEn);
+      modifiersEn = replace(modifiersEn);
+      
+      const ratioParam = data.ratio ? ` --ar ${data.ratio}` : '';
+
+      let mainDesc = "";
+      if (moodEn) mainDesc += `${moodEn}`;
+      
+      let sceneDesc = "";
+      const locationPart = locationEn ? ` situated at ${locationEn}` : "";
+      const timePart = timeEn ? ` during ${timeEn}` : "";
+      const weatherPart = weatherEn ? ` with ${weatherEn} weather` : "";
+      
+      if (locationPart || timePart || weatherPart) {
+        sceneDesc = `. A scene${locationPart}${timePart}${weatherPart}`;
+      }
+      
+      let charDesc = "";
+      if (peopleEn) charDesc += `. ${peopleEn} is visible in the frame`;
+      if (animalsEn) charDesc += `. ${animalsEn} is relaxing nearby`;
+
+      let objDesc = "";
+      if (objectsEn) objDesc += `. Featuring ${objectsEn}`;
+
+      let modifierDesc = "";
+      if (modifiersEn) modifierDesc += ` ${modifiersEn}.`;
+
+      const fullContent = [mainDesc, sceneDesc, charDesc, objDesc].filter(Boolean).join('');
+      
+      // Customize prompt structure slightly based on art style
+      let finalPrompt = '';
+      if (data.artStyle === 'realistic_4k') {
+         finalPrompt = `${baseStyle} ${fullContent}${modifierDesc}. Photorealistic, ultra detailed, 8k. --no people, cartoon, drawing, anime, blurry, low resolution${ratioParam}`;
+      } else {
+         finalPrompt = `${baseStyle}${modifierDesc} ${fullContent}. Focus on atmosphere. --no people, distracting elements, harsh lights, vibrant colors${ratioParam}`;
+      }
+
+      setGeneratedPrompt(finalPrompt);
+
+      let krText = "";
+      if (data.weather) krText += `${data.weather} 날씨의 `;
+      if (data.time) krText += `${data.time}, `;
+      if (data.location) krText += `${data.location}에서 `;
+      if (data.mood) krText += `'${data.mood}' 분위기를 담고 있습니다. `;
+      if (data.people || data.animals) krText += `\n등장 요소: ${[data.people, data.animals].filter(Boolean).join(', ')}. `;
+      if (data.objects) krText += `\n소품: ${data.objects}.`;
+      
+      if (data.customModifiers.length > 0) {
+        krText += `\n\n✨ AI 수정/벤치마킹 반영됨:\n${data.customModifiers.map(m => `- ${m}`).join('\n')}`;
+      }
+      
+      if (!krText) krText = "생성된 프롬프트 정보를 확인하세요.";
+      setKoreanExplanation(krText);
+      addToHistory(finalPrompt, krText, data);
+
+    } catch (error) {
+      console.error("Generation Error", error);
+      setGeneratedPrompt("Error generating prompt. Please try again.");
+    } finally {
+      setIsGeneratingPrompt(false);
     }
-    
-    if (!krText) krText = "생성된 프롬프트 정보를 확인하세요.";
-    setKoreanExplanation(krText);
   };
 
   const handleAutoGenerate = async () => {
     setIsAutoGenerating(true);
     try {
+      let imageStyleInstruction = "";
+      const imageStyleModifier = inputs.customModifiers.find(m => m.startsWith('Image Style:'));
+      
+      if (imageStyleModifier) {
+        imageStyleInstruction = `The user has provided a reference image style: "${imageStyleModifier}". You MUST respect this visual style (e.g. colors, texture) while generating a new scene (location, mood). Do NOT change the art style to something conflicting.`;
+      }
+
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: "Create a creative and cohesive scene description for a Lo-fi hip hop music video background. Mix and match elements to create a unique vibe (e.g., Cyberpunk cafe, Fantasy forest, Retro bedroom).",
+        contents: `Create a UNIQUE, CREATIVE, and slightly NICHE scene description for a Lo-fi hip hop music video background. 
+        Avoid common "bedroom/cafe" tropes if possible. Try themes like Solarpunk, Cyberpunk, Fantasy Forest, Medieval, Space Station, Underwater, or Post-Apocalyptic Nature.
+        
+        Mix and match elements to create a unique vibe. 
+        IMPORTANT: All string values must be in English. ${imageStyleInstruction}`,
         config: {
           responseMimeType: "application/json",
           responseSchema: {
@@ -149,7 +264,7 @@ const LofiPromptGenerator: React.FC = () => {
               animals: { type: Type.STRING },
               time: { type: Type.STRING, enum: ['새벽', '밤', '늦은 오후', '아침'] },
               weather: { type: Type.STRING, enum: ['비', '맑음', '눈', '안개', '흐림'] },
-              artStyle: { type: Type.STRING, enum: ['anime', 'pixel', 'watercolor', 'isometric', 'cinematic'] },
+              artStyle: { type: Type.STRING, enum: ['anime', 'pixel', 'watercolor', 'isometric', 'cinematic', 'realistic_4k'] },
             },
             required: ["mood", "location", "objects", "people", "animals", "time", "weather", "artStyle"]
           }
@@ -160,12 +275,14 @@ const LofiPromptGenerator: React.FC = () => {
       const newInputs = {
         ...inputs,
         ...result,
-        customModifiers: [] // Reset modifiers for a fresh auto-gen
+        customModifiers: imageStyleModifier ? [imageStyleModifier] : []
       };
       
       setInputs(newInputs);
+      setActivePreset(null); // Auto gen is not a preset
       handleGenerate(newInputs);
-      setActiveAccordion(null); // Close accordions to show we moved to generation
+      // Ensure all accordions are open to show the generated values
+      setActiveAccordions(['artStyle', 'peopleAnimals', 'moodPlace', 'objects', 'timeWeather']);
       
     } catch (error) {
       console.error("Auto Gen Error", error);
@@ -174,91 +291,61 @@ const LofiPromptGenerator: React.FC = () => {
     }
   };
 
-  const handleSmartFeedback = () => {
+  const handleSmartFeedback = async () => {
     if (!userFeedback.trim()) return;
     setIsRefining(true);
 
-    setTimeout(() => {
-      const feedback = userFeedback.toLowerCase();
-      const newInputs = { ...inputs };
-      let refinedModifier = '';
-      let actionLog = ''; 
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: `Analyze this user feedback for a Lo-fi image prompt: "${userFeedback}".
+        The current state is: ${JSON.stringify(inputs)}.
+        
+        Return a JSON object with:
+        1. 'updates': Object containing any fields (mood, location, time, weather, people, animals, objects) that should be updated. Values for 'time' must be ['새벽', '밤', '늦은 오후', '아침']. Values for 'weather' must be ['비', '맑음', '눈', '안개', '흐림']. Other fields should be in English.
+        2. 'customModifier': A string in ENGLISH describing the visual style change or specific detail requested (e.g. "add more neon lights", "make it look sad"). If no visual style change is needed, return empty string.
+        `,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              updates: {
+                 type: Type.OBJECT,
+                 properties: {
+                    mood: { type: Type.STRING },
+                    location: { type: Type.STRING },
+                    objects: { type: Type.STRING },
+                    people: { type: Type.STRING },
+                    animals: { type: Type.STRING },
+                    time: { type: Type.STRING },
+                    weather: { type: Type.STRING }
+                 }
+              },
+              customModifier: { type: Type.STRING }
+            }
+          }
+        }
+      });
 
-      if (feedback.includes('비') || feedback.includes('rain')) {
-        newInputs.weather = '비';
-        actionLog = '날씨를 비로 변경';
-      }
-      else if (feedback.includes('맑음') || feedback.includes('sunny') || feedback.includes('화창')) {
-        newInputs.weather = '맑음';
-        actionLog = '날씨를 맑음으로 변경';
-      }
+      const result = JSON.parse(response.text);
+      const newInputs = { ...inputs, ...result.updates };
       
-      if (feedback.includes('밤') || feedback.includes('night') || feedback.includes('어둡게')) {
-        newInputs.time = '밤';
-        refinedModifier = 'low key lighting, deep shadows'; 
-        actionLog = '시간을 밤으로 변경 및 조명 조절';
-      }
-      else if (feedback.includes('밝게') || feedback.includes('아침') || feedback.includes('day')) {
-        newInputs.time = '아침';
-        refinedModifier = 'bright natural lighting, high exposure';
-        actionLog = '시간을 아침으로 변경 및 조명 조절';
-      }
-
-      if (feedback.includes('사람 빼') || feedback.includes('no people') || feedback.includes('혼자')) {
-        newInputs.people = '사람 없음';
-        actionLog = '인물 제거';
-      }
-      if (feedback.includes('고양이')) {
-        newInputs.animals = '고양이';
-        actionLog = '고양이 추가';
-      }
-      if (feedback.includes('강아지') || feedback.includes('개')) {
-        newInputs.animals = '강아지';
-        actionLog = '강아지 추가';
-      }
-
-      if (feedback.includes('우울') || feedback.includes('슬픔') || feedback.includes('sad')) {
-        newInputs.mood = '슬픔/고독';
-        refinedModifier = 'blue tones, melancholic atmosphere, lonely vibes';
-        actionLog = '우울한 분위기 적용';
-      }
-      if (feedback.includes('따뜻') || feedback.includes('warm')) {
-        refinedModifier = 'warm color palette, orange and yellow tones, cozy atmosphere';
-        actionLog = '따뜻한 색감 적용';
-      }
-      if (feedback.includes('레트로') || feedback.includes('빈티지') || feedback.includes('retro')) {
-        refinedModifier = '90s aesthetic, vhs glitch effect, chromatic aberration, noise filter';
-        actionLog = '레트로 필터 적용';
-      }
-      if (feedback.includes('심플') || feedback.includes('깔끔') || feedback.includes('simple')) {
-         refinedModifier = 'minimalist composition, clean lines, negative space, flat design';
-         actionLog = '미니멀 스타일 적용';
-      }
-      if (feedback.includes('화려') || feedback.includes('vibrant')) {
-        refinedModifier = 'neon lights, saturated colors, cyberpunk vibes';
-        actionLog = '화려한 색채 적용';
-      }
-
-      if (!refinedModifier && !actionLog) {
-         refinedModifier = `emphasizing ${userFeedback}, detailed representation`;
-         actionLog = '사용자 요청 반영';
-      }
-
-      if (refinedModifier) {
-        newInputs.customModifiers = [...newInputs.customModifiers, refinedModifier];
+      if (result.customModifier) {
+        newInputs.customModifiers = [...newInputs.customModifiers, result.customModifier];
       }
       
       setInputs(newInputs);
-      handleGenerate(newInputs); // Regenerate prompt with feedback
+      setActivePreset(null); // Custom changes invalidate preset
+      await handleGenerate(newInputs);
       setUserFeedback('');
-      setIsRefining(false);
-    }, 1200);
-  };
-
-  const handleLinkChange = (index: number, value: string) => {
-    const newLinks = [...benchmarkLinks];
-    newLinks[index] = value;
-    setBenchmarkLinks(newLinks);
+      
+    } catch (error) {
+       console.error("Smart Feedback Error", error);
+    } finally {
+       setIsRefining(false);
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -293,11 +380,13 @@ const LofiPromptGenerator: React.FC = () => {
             },
             {
               text: `Analyze the visual style of this image for a Lo-fi music video background.
-              You MUST return a JSON object with the following fields to configure a generative AI prompt:
-              1. 'styleModifier': A detailed, artistic style description string (max 15-20 words).
+              Return a JSON object with the following fields to configure a generative AI prompt.
+              IMPORTANT: 'styleModifier' and 'mood' MUST be in ENGLISH.
+              
+              1. 'styleModifier': A detailed, artistic style description string in English (max 15-20 words).
               2. 'time': Pick one exactly from ['새벽', '밤', '늦은 오후', '아침'].
-              3. 'weather': Pick one exactly from ['비', '맑음', '눈', '안개'].
-              4. 'mood': Pick one exactly from ['밤샘 공부', '새벽', '휴식', '도시 야경', '몽환적인', '평화로움', '잔잔한', '슬픔/고독', '행복/설렘', '신남/활기', '따뜻함'].
+              3. 'weather': Pick one exactly from ['비', '맑음', '눈', '안개', '흐림'].
+              4. 'mood': A mood keyword in English (e.g. "Relaxing", "Melancholic").
               `
             }
           ]
@@ -329,67 +418,12 @@ const LofiPromptGenerator: React.FC = () => {
           `Image Style: ${result.styleModifier}`
         ]
       }));
+      setActivePreset(null); // Benchmarking overrides preset
 
     } catch (error) {
       console.error("Gemini Image Benchmark Error", error);
     } finally {
       setIsImageBenchmarking(false);
-    }
-  };
-
-  const analyzeBenchmarkHandler = async () => {
-    const hasLink = benchmarkLinks.some(link => link.trim() !== '');
-    if (!hasLink) return;
-
-    setIsBenchmarking(true);
-    
-    try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const linksContext = benchmarkLinks.filter(l => l.trim()).join(', ');
-      
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: `Analyze the implied visual style of a Lo-fi music video from these URLs/Context: "${linksContext}".
-        If URLs are generic, imagine a high-quality, trending Lo-fi aesthetic (e.g., Cyberpunk, Cottagecore, Retro 90s, Dreamy).
-        
-        You MUST return a JSON object with the following fields to configure a generative AI prompt:
-        1. 'styleModifier': A detailed, artistic style description string (max 15-20 words).
-        2. 'time': Pick one exactly from ['새벽', '밤', '늦은 오후', '아침'].
-        3. 'weather': Pick one exactly from ['비', '맑음', '눈', '안개'].
-        4. 'mood': Pick one exactly from ['밤샘 공부', '새벽', '휴식', '도시 야경', '몽환적인', '평화로움', '잔잔한', '슬픔/고독', '행복/설렘', '신남/활기', '따뜻함'].
-        `,
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: {
-            type: Type.OBJECT,
-            properties: {
-              styleModifier: { type: Type.STRING },
-              time: { type: Type.STRING },
-              weather: { type: Type.STRING },
-              mood: { type: Type.STRING },
-            },
-            required: ["styleModifier", "time", "weather", "mood"]
-          }
-        }
-      });
-
-      const result = JSON.parse(response.text);
-
-      setInputs(prev => ({
-        ...prev,
-        time: result.time || prev.time,
-        weather: result.weather || prev.weather,
-        mood: result.mood || prev.mood,
-        customModifiers: [
-          ...prev.customModifiers.filter(m => !m.startsWith('Benchmarked Style:') && !m.startsWith('Image Style:')), 
-          `Benchmarked Style: ${result.styleModifier}`
-        ]
-      }));
-
-    } catch (error) {
-      console.error("Gemini Benchmark Error", error);
-    } finally {
-      setIsBenchmarking(false);
     }
   };
 
@@ -447,14 +481,19 @@ const LofiPromptGenerator: React.FC = () => {
       }
 
       setInputs(newInputs);
+      setActivePreset(null);
       setIsAnalyzing(false);
-      setActiveAccordion('peopleAnimals'); 
+      // Ensure specific accordion is open to show result, though now all are open by default
+      if (!activeAccordions.includes('peopleAnimals')) {
+         toggleAccordion('peopleAnimals');
+      }
     }, 1000);
   };
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setInputs(prev => ({ ...prev, [name]: value }));
+    setActivePreset(null); // Manual change deselects preset
   };
 
   const copyToClipboard = () => {
@@ -476,204 +515,245 @@ const LofiPromptGenerator: React.FC = () => {
     }
   };
 
-  const toggleAccordion = (section: string) => setActiveAccordion(prev => prev === section ? null : section);
+  const toggleAccordion = (section: string) => {
+    setActiveAccordions(prev => 
+      prev.includes(section) 
+        ? prev.filter(i => i !== section) 
+        : [...prev, section]
+    );
+  };
 
   return (
-    <div className="min-h-screen bg-slate-900 text-slate-200 font-sans flex items-center justify-center p-4">
-      <div className="max-w-6xl w-full grid grid-cols-1 xl:grid-cols-12 gap-6">
+    <div className="min-h-screen font-sans flex items-center justify-center p-4 relative z-10">
+      <div className="max-w-7xl w-full grid grid-cols-1 xl:grid-cols-12 gap-6">
+        
+        {/* Left Sidebar */}
         <div className="xl:col-span-5 space-y-4">
-          <div className="bg-slate-800/50 backdrop-blur-sm p-6 rounded-2xl border border-slate-700 shadow-xl flex flex-col h-full max-h-[90vh] relative">
-            <div className="flex items-center justify-between mb-4 flex-shrink-0">
+          <div className="bg-slate-800/40 backdrop-blur-xl p-6 rounded-3xl border border-slate-700/50 shadow-2xl flex flex-col h-full max-h-[92vh] relative">
+            <div className="flex items-center justify-between mb-6 flex-shrink-0">
               <div className="flex items-center space-x-3">
-                <div className="p-2 bg-purple-500/20 rounded-lg"><Music className="w-5 h-5 text-purple-400" /></div>
+                <div className="p-2.5 bg-gradient-to-br from-purple-500/30 to-blue-500/30 rounded-xl border border-white/10 shadow-inner">
+                  <Music className="w-6 h-6 text-purple-300" />
+                </div>
                 <div>
-                  <h1 className="text-xl font-bold text-white tracking-tight">Lo-fi Flow</h1>
-                  <p className="text-xs text-slate-400">Gemini & Chillhop Prompt Gen</p>
+                  <h1 className="text-2xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-slate-400 tracking-tight">Lo-fi Flow</h1>
+                  <p className="text-xs text-slate-400 font-medium tracking-wide">Gemini & Chillhop Studio</p>
                 </div>
               </div>
-              <button onClick={handleReset} className="text-xs flex items-center text-slate-400 hover:text-white transition-colors bg-slate-700/50 px-3 py-1.5 rounded-full">
-                 <RotateCcw className="w-3 h-3 mr-1" /> 초기화
+              <button onClick={handleReset} className="text-xs font-bold flex items-center text-slate-400 hover:text-white transition-colors bg-slate-700/40 hover:bg-slate-700/60 px-3 py-1.5 rounded-full border border-slate-600/50">
+                 <RotateCcw className="w-3.5 h-3.5 mr-1.5" /> 초기화
                </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-3 pb-24">
-              {/* Analysis Section */}
-              <div className="space-y-3 mb-6">
-                <div className="bg-slate-900/40 p-3 rounded-xl border border-purple-500/30">
-                  <label className="flex items-center text-xs font-semibold text-purple-300 uppercase tracking-wider mb-2">
-                    <FileText className="w-3 h-3 mr-2" /> 가사 / 텍스트 기반 추출
-                  </label>
-                  <textarea 
-                    value={lyrics} 
-                    onChange={(e) => setLyrics(e.target.value)} 
-                    placeholder="예: 십자가가 보이는 교회 앞..." 
-                    className="w-full bg-slate-900/80 border border-slate-600 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-purple-500 transition-all placeholder-slate-600 mb-2 h-14 resize-none text-slate-200" 
-                  />
-                  <button onClick={analyzeLyricsHandler} disabled={isAnalyzing || !lyrics.trim()} className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center ${isAnalyzing ? 'bg-slate-700 text-slate-400' : 'bg-purple-600/20 hover:bg-purple-600/40 text-purple-300'}`}>
-                    {isAnalyzing ? <RefreshCw className="w-3 h-3 mr-2 animate-spin" /> : <Sparkles className="w-3 h-3 mr-2" />} {isAnalyzing ? "키워드 입력폼에 적용" : "키워드 입력폼에 적용"}
-                  </button>
-                </div>
+            <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4 pb-32">
+              
+              {/* Quick Presets */}
+              <div className="mb-2">
+                 <div className="flex items-center justify-between mb-3 px-1">
+                    <div className="flex items-center text-xs font-bold text-slate-400">
+                      <Zap className="w-3 h-3 mr-1.5 text-yellow-400" /> 퀵 프리셋 (Quick Presets)
+                    </div>
+                 </div>
+                 
+                 {/* Category Tabs */}
+                 <div className="flex space-x-2 mb-3 px-1 overflow-x-auto custom-scrollbar pb-1">
+                   {[
+                     { id: 'all', label: '전체' },
+                     { id: 'daily', label: '일상' },
+                     { id: 'travel', label: '여행/야외' },
+                     { id: 'season', label: '계절' },
+                   ].map((cat) => (
+                     <button
+                       key={cat.id}
+                       onClick={() => setActiveCategory(cat.id as PresetCategory | 'all')}
+                       className={`px-3 py-1 text-[10px] rounded-full font-bold whitespace-nowrap transition-all ${
+                         activeCategory === cat.id 
+                           ? 'bg-slate-200 text-slate-900 shadow-md' 
+                           : 'bg-slate-900/40 text-slate-500 hover:bg-slate-800 border border-slate-700/50'
+                       }`}
+                     >
+                       {cat.label}
+                     </button>
+                   ))}
+                 </div>
 
-                <div className="bg-slate-900/40 p-3 rounded-xl border border-red-500/30">
-                  <label className="flex items-center text-xs font-semibold text-red-300 uppercase tracking-wider mb-2">
-                    <Youtube className="w-3 h-3 mr-2" /> 유튜브 스타일 벤치마킹
-                  </label>
-                  <div className="space-y-2 mb-2">
-                    {benchmarkLinks.map((link, idx) => (
-                      <div key={idx} className="relative">
-                        <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-500" />
-                        <input type="text" value={link} onChange={(e) => handleLinkChange(idx, e.target.value)} placeholder={`유튜브 링크 #${idx + 1}`} className="w-full bg-slate-900/80 border border-slate-600 rounded-lg pl-8 pr-3 py-2 text-xs focus:outline-none focus:border-red-500 transition-all placeholder-slate-600 text-slate-200" />
-                      </div>
+                 {/* Updated: 2-row grid layout for presets with filtering */}
+                 <div className="grid grid-rows-2 grid-flow-col gap-2 overflow-x-auto pb-2 custom-scrollbar snap-x min-h-[90px]">
+                    {filteredPresets.map((preset, idx) => (
+                      <button 
+                        key={idx}
+                        onClick={() => applyPreset(preset.data)}
+                        className={`snap-start flex-shrink-0 flex items-center space-x-2 border px-3 py-2 rounded-xl transition-all group whitespace-nowrap ${
+                          activePreset === preset.label 
+                            ? 'bg-purple-900/60 border-purple-400 shadow-[0_0_10px_rgba(168,85,247,0.3)]' 
+                            : 'bg-slate-900/60 hover:bg-slate-800 border-slate-700 hover:border-purple-500/50'
+                        }`}
+                      >
+                         <span className="text-lg group-hover:scale-110 transition-transform">{preset.emoji}</span>
+                         <span className={`text-xs font-medium group-hover:text-white ${activePreset === preset.label ? 'text-white' : 'text-slate-300'}`}>{preset.label}</span>
+                      </button>
                     ))}
-                  </div>
-                  <button onClick={analyzeBenchmarkHandler} disabled={isBenchmarking || benchmarkLinks.every(l => !l.trim())} className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center ${isBenchmarking ? 'bg-slate-700 text-slate-400' : 'bg-red-500/20 hover:bg-red-500/40 text-red-300'}`}>
-                    {isBenchmarking ? <RefreshCw className="w-3 h-3 mr-2 animate-spin" /> : <Monitor className="w-3 h-3 mr-2" />} {isBenchmarking ? "분석 중..." : "입력폼에 스타일 적용"}
-                  </button>
-                </div>
+                    {filteredPresets.length === 0 && (
+                      <div className="col-span-full row-span-2 flex items-center justify-center text-xs text-slate-500 italic p-4 w-full">
+                        해당 카테고리의 프리셋이 없습니다.
+                      </div>
+                    )}
+                 </div>
+              </div>
 
-                <div className="bg-slate-900/40 p-3 rounded-xl border border-blue-500/30">
-                  <label className="flex items-center text-xs font-semibold text-blue-300 uppercase tracking-wider mb-2">
-                    <ImageIcon className="w-3 h-3 mr-2" /> 이미지 벤치마킹
-                  </label>
-                  <div className="flex items-center space-x-2 mb-2">
-                    <div 
-                      onClick={() => fileInputRef.current?.click()}
-                      className="flex-1 bg-slate-900/80 border border-slate-600 border-dashed rounded-lg h-14 flex items-center justify-center cursor-pointer hover:border-blue-500 transition-colors group relative overflow-hidden"
-                    >
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        onChange={handleImageUpload} 
-                        accept="image/*" 
-                        className="hidden" 
+              {/* Analysis Tools */}
+              <div className="space-y-3">
+                <div className="bg-gradient-to-br from-slate-900/60 to-slate-800/40 p-1 rounded-2xl border border-purple-500/20 shadow-lg">
+                  <div className="p-3">
+                    <label className="flex items-center text-xs font-bold text-purple-300 uppercase tracking-wider mb-2.5">
+                      <FileText className="w-3.5 h-3.5 mr-2" /> 가사 / 텍스트 분석
+                    </label>
+                    <div className="relative">
+                      <textarea 
+                        value={lyrics} 
+                        onChange={(e) => setLyrics(e.target.value)} 
+                        placeholder="예: 십자가가 보이는 교회 앞..." 
+                        className="w-full bg-slate-950/50 border border-slate-700 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-purple-500 focus:bg-slate-900 transition-all placeholder-slate-600 mb-2 h-16 resize-none text-slate-200 shadow-inner" 
                       />
-                      {benchmarkImage ? (
-                        <img src={benchmarkImage} alt="Benchmark" className="w-full h-full object-cover opacity-60 group-hover:opacity-40 transition-opacity" />
-                      ) : (
-                        <div className="text-center">
-                          <Upload className="w-4 h-4 text-slate-500 mx-auto mb-1 group-hover:text-blue-400" />
-                          <span className="text-[10px] text-slate-500 group-hover:text-blue-400">클릭하여 이미지 업로드</span>
-                        </div>
-                      )}
+                      <button onClick={analyzeLyricsHandler} disabled={isAnalyzing || !lyrics.trim()} className="absolute right-2 bottom-4 p-1.5 bg-purple-500/20 hover:bg-purple-500 text-purple-300 hover:text-white rounded-lg transition-colors disabled:opacity-0">
+                         {isAnalyzing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ArrowRight className="w-3 h-3" />}
+                      </button>
                     </div>
                   </div>
-                  <button 
-                    onClick={analyzeImageBenchmarkHandler} 
-                    disabled={isImageBenchmarking || !benchmarkImage} 
-                    className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all flex items-center justify-center ${isImageBenchmarking ? 'bg-slate-700 text-slate-400' : 'bg-blue-500/20 hover:bg-blue-500/40 text-blue-300'}`}
-                  >
-                    {isImageBenchmarking ? <RefreshCw className="w-3 h-3 mr-2 animate-spin" /> : <Monitor className="w-3 h-3 mr-2" />} 
-                    {isImageBenchmarking ? "분석 중..." : "입력폼에 이미지 스타일 적용"}
-                  </button>
+                </div>
+
+                <div className="bg-gradient-to-br from-slate-900/60 to-slate-800/40 p-1 rounded-2xl border border-blue-500/20 shadow-lg">
+                   <div className="p-3">
+                    <label className="flex items-center text-xs font-bold text-blue-300 uppercase tracking-wider mb-2.5">
+                      <ImageIcon className="w-3.5 h-3.5 mr-2" /> 이미지 스타일 벤치마킹
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <div 
+                        onClick={() => fileInputRef.current?.click()}
+                        className={`flex-1 bg-slate-950/50 border border-slate-700 border-dashed rounded-xl h-16 flex items-center justify-center cursor-pointer hover:border-blue-500 hover:bg-slate-900/80 transition-all group relative overflow-hidden ${benchmarkImage ? 'border-blue-500/50' : ''}`}
+                      >
+                        <input 
+                          type="file" 
+                          ref={fileInputRef} 
+                          onChange={handleImageUpload} 
+                          accept="image/*" 
+                          className="hidden" 
+                        />
+                        {benchmarkImage ? (
+                          <>
+                             <img src={benchmarkImage} alt="Benchmark" className="w-full h-full object-cover opacity-50 blur-[1px] group-hover:blur-none transition-all" />
+                             <div className="absolute inset-0 flex items-center justify-center bg-black/40 group-hover:bg-transparent transition-colors">
+                                <span className="text-[10px] text-white font-medium bg-black/50 px-2 py-1 rounded-full backdrop-blur-sm">이미지 변경</span>
+                             </div>
+                          </>
+                        ) : (
+                          <div className="text-center">
+                            <Upload className="w-5 h-5 text-slate-500 mx-auto mb-1.5 group-hover:text-blue-400 group-hover:scale-110 transition-transform" />
+                            <span className="text-[10px] text-slate-500 group-hover:text-blue-300 font-medium">클릭하여 이미지 업로드</span>
+                          </div>
+                        )}
+                      </div>
+                      <button 
+                        onClick={analyzeImageBenchmarkHandler} 
+                        disabled={isImageBenchmarking || !benchmarkImage} 
+                        className={`h-16 w-16 rounded-xl flex items-center justify-center transition-all shadow-lg ${isImageBenchmarking ? 'bg-slate-800 text-slate-500' : 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20'}`}
+                      >
+                        {isImageBenchmarking ? <RefreshCw className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}
+                      </button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Form Section */}
-              <div className="space-y-2">
-                <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-900/30">
-                  <button onClick={() => toggleAccordion('artStyle')} className="w-full flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-700/50 transition-colors text-xs font-semibold text-green-300 uppercase tracking-wider">
-                    <div className="flex items-center"><Palette className="w-3 h-3 mr-2" /> 아트 스타일</div>
-                    {activeAccordion === 'artStyle' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  {activeAccordion === 'artStyle' && (
-                    <div className="p-3 grid grid-cols-2 gap-2 animate-in slide-in-from-top-2 duration-200">
-                      {Object.entries(ART_STYLES).map(([key, style]) => (
-                        <button key={key} onClick={() => setInputs(prev => ({...prev, artStyle: key}))} className={`py-2 px-3 text-xs text-left rounded-lg border transition-all ${inputs.artStyle === key ? 'bg-green-500/20 border-green-500 text-green-300 font-bold' : 'bg-slate-900/50 border-slate-600 text-slate-400 hover:bg-slate-800'}`}>
-                          {style.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
+              {/* Accordion Forms */}
+              <div className="space-y-2.5">
+                {[
+                  { id: 'artStyle', label: '아트 스타일', icon: <Palette className="w-3.5 h-3.5 mr-2" />, color: 'text-green-300' },
+                  { id: 'peopleAnimals', label: '인물 및 동물', icon: <User className="w-3.5 h-3.5 mr-2" />, color: 'text-pink-300' },
+                  { id: 'moodPlace', label: '분위기 및 장소', icon: <Sliders className="w-3.5 h-3.5 mr-2" />, color: 'text-purple-300' },
+                  { id: 'objects', label: '오브젝트', icon: <Coffee className="w-3.5 h-3.5 mr-2" />, color: 'text-amber-300' },
+                  { id: 'timeWeather', label: '시간 및 날씨', icon: <Moon className="w-3.5 h-3.5 mr-2" />, color: 'text-indigo-300' },
+                ].map((section) => (
+                  <div key={section.id} className="border border-slate-700/50 rounded-xl overflow-hidden bg-slate-900/40 backdrop-blur-sm transition-all hover:border-slate-600/80">
+                    <button onClick={() => toggleAccordion(section.id)} className={`w-full flex items-center justify-between p-3.5 hover:bg-white/5 transition-colors text-xs font-bold uppercase tracking-wider ${section.color}`}>
+                      <div className="flex items-center">{section.icon} {section.label}</div>
+                      {activeAccordions.includes(section.id) ? <ChevronUp className="w-3.5 h-3.5 opacity-70" /> : <ChevronDown className="w-3.5 h-3.5 opacity-70" />}
+                    </button>
+                    {activeAccordions.includes(section.id) && (
+                      <div className="p-3.5 border-t border-slate-700/30 bg-black/20 animate-in slide-in-from-top-1 duration-200">
+                         {/* Form Content Switch */}
+                         {section.id === 'artStyle' && (
+                           <div className="grid grid-cols-2 gap-2">
+                             {Object.entries(ART_STYLES).map(([key, style]) => (
+                               <button key={key} onClick={() => { setInputs(prev => ({...prev, artStyle: key})); setActivePreset(null); }} className={`py-2.5 px-3 text-xs text-left rounded-lg border transition-all ${inputs.artStyle === key ? 'bg-green-500/10 border-green-500/50 text-green-300 font-bold shadow-[0_0_10px_rgba(34,197,94,0.1)]' : 'bg-slate-800/50 border-slate-600/50 text-slate-400 hover:bg-slate-800'}`}>
+                                 {style.label}
+                               </button>
+                             ))}
+                           </div>
+                         )}
+                         {section.id === 'peopleAnimals' && (
+                           <div className="space-y-3">
+                              <div>
+                                <label className="flex items-center text-[10px] font-bold text-slate-500 mb-1.5">인물 (CHARACTER)</label>
+                                <input type="text" name="people" value={inputs.people} onChange={handleInputChange} placeholder="예: 학생, 소녀" className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2.5 text-xs focus:border-pink-500 outline-none text-slate-200 transition-colors" />
+                              </div>
+                              <div>
+                                <label className="flex items-center text-[10px] font-bold text-slate-500 mb-1.5">동물 (ANIMAL)</label>
+                                <input type="text" name="animals" value={inputs.animals} onChange={handleInputChange} placeholder="예: 고양이, 강아지" className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2.5 text-xs focus:border-pink-500 outline-none text-slate-200 transition-colors" />
+                              </div>
+                           </div>
+                         )}
+                         {section.id === 'moodPlace' && (
+                           <div className="space-y-3">
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5">분위기 (MOOD)</label>
+                                <input type="text" name="mood" value={inputs.mood} onChange={handleInputChange} placeholder="예: 밤샘 공부, 몽환적인" className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2.5 text-xs focus:border-purple-500 outline-none text-slate-200 transition-colors" />
+                              </div>
+                              <div>
+                                <label className="block text-[10px] font-bold text-slate-500 mb-1.5">장소 (LOCATION)</label>
+                                <input type="text" name="location" value={inputs.location} onChange={handleInputChange} placeholder="예: 창가, 작은 아파트 방" className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2.5 text-xs focus:border-blue-500 outline-none text-slate-200 transition-colors" />
+                              </div>
+                           </div>
+                         )}
+                         {section.id === 'objects' && (
+                           <input type="text" name="objects" value={inputs.objects} onChange={handleInputChange} placeholder="예: 노트북, 커피, 고양이" className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-3 py-2.5 text-xs focus:border-amber-500 outline-none text-slate-200 transition-colors" />
+                         )}
+                         {section.id === 'timeWeather' && (
+                           <div className="grid grid-cols-2 gap-3">
+                             <div>
+                               <label className="block text-[10px] font-bold text-slate-500 mb-1.5">시간 (TIME)</label>
+                               <select name="time" value={inputs.time} onChange={handleInputChange} className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-2 py-2.5 text-xs outline-none cursor-pointer text-slate-200 transition-colors appearance-none">
+                                 <option value="">선택 안함</option>
+                                 <option value="새벽">새벽</option>
+                                 <option value="밤">밤</option>
+                                 <option value="늦은 오후">늦은 오후</option>
+                                 <option value="아침">아침</option>
+                               </select>
+                             </div>
+                             <div>
+                               <label className="block text-[10px] font-bold text-slate-500 mb-1.5">날씨 (WEATHER)</label>
+                               <select name="weather" value={inputs.weather} onChange={handleInputChange} className="w-full bg-slate-900/50 border border-slate-600/50 rounded-lg px-2 py-2.5 text-xs outline-none cursor-pointer text-slate-200 transition-colors appearance-none">
+                                 <option value="">선택 안함</option>
+                                 <option value="비">비</option>
+                                 <option value="맑음">맑음</option>
+                                 <option value="눈">눈</option>
+                                 <option value="안개">안개</option>
+                               </select>
+                             </div>
+                           </div>
+                         )}
+                      </div>
+                    )}
+                  </div>
+                ))}
 
-                <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-900/30">
-                  <button onClick={() => toggleAccordion('peopleAnimals')} className="w-full flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-700/50 transition-colors text-xs font-semibold text-pink-300 uppercase tracking-wider">
-                    <div className="flex items-center"><User className="w-3 h-3 mr-2" /> 인물 및 동물</div>
-                    {activeAccordion === 'peopleAnimals' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  {activeAccordion === 'peopleAnimals' && (
-                    <div className="p-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
-                      <div className="group">
-                        <label className="flex items-center text-[10px] text-slate-400 mb-1"><User className="w-3 h-3 mr-1 text-pink-400" /> 인물 (Character)</label>
-                        <input type="text" name="people" value={inputs.people} onChange={handleInputChange} placeholder="예: 학생, 소녀, 소년, 커플" className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-xs focus:border-pink-500 outline-none text-slate-200" />
-                      </div>
-                      <div>
-                        <label className="flex items-center text-[10px] text-slate-400 mb-1"><Cat className="w-3 h-3 mr-1 text-pink-400" /> 동물 (Animal)</label>
-                        <input type="text" name="animals" value={inputs.animals} onChange={handleInputChange} placeholder="예: 고양이, 강아지, 새" className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-xs focus:border-pink-500 outline-none text-slate-200" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-900/30">
-                  <button onClick={() => toggleAccordion('moodPlace')} className="w-full flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-700/50 transition-colors text-xs font-semibold text-purple-300 uppercase tracking-wider">
-                    <div className="flex items-center"><Sliders className="w-3 h-3 mr-2" /> 분위기 및 장소</div>
-                    {activeAccordion === 'moodPlace' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  {activeAccordion === 'moodPlace' && (
-                    <div className="p-3 space-y-3 animate-in slide-in-from-top-2 duration-200">
-                      <div className="group">
-                        <label className="block text-[10px] text-slate-400 mb-1">분위기 (Mood)</label>
-                        <input type="text" name="mood" value={inputs.mood} onChange={handleInputChange} placeholder="예: 밤샘 공부, 몽환적인" className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-xs focus:border-purple-500 outline-none text-slate-200" />
-                      </div>
-                      <div>
-                        <label className="block text-[10px] text-slate-400 mb-1">장소 (Location)</label>
-                        <input type="text" name="location" value={inputs.location} onChange={handleInputChange} placeholder="예: 창가, 작은 아파트 방" className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-xs focus:border-blue-500 outline-none text-slate-200" />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-900/30">
-                  <button onClick={() => toggleAccordion('objects')} className="w-full flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-700/50 transition-colors text-xs font-semibold text-amber-300 uppercase tracking-wider">
-                    <div className="flex items-center"><Coffee className="w-3 h-3 mr-2" /> 오브젝트</div>
-                    {activeAccordion === 'objects' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  {activeAccordion === 'objects' && (
-                    <div className="p-3 animate-in slide-in-from-top-2 duration-200">
-                      <input type="text" name="objects" value={inputs.objects} onChange={handleInputChange} placeholder="예: 노트북, 커피, 고양이" className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-3 py-2 text-xs focus:border-amber-500 outline-none text-slate-200" />
-                    </div>
-                  )}
-                </div>
-
-                <div className="border border-slate-700/50 rounded-lg overflow-hidden bg-slate-900/30">
-                  <button onClick={() => toggleAccordion('timeWeather')} className="w-full flex items-center justify-between p-3 bg-slate-800/50 hover:bg-slate-700/50 transition-colors text-xs font-semibold text-indigo-300 uppercase tracking-wider">
-                    <div className="flex items-center"><Moon className="w-3 h-3 mr-2" /> 시간 및 날씨</div>
-                    {activeAccordion === 'timeWeather' ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                  </button>
-                  {activeAccordion === 'timeWeather' && (
-                    <div className="p-3 grid grid-cols-2 gap-3 animate-in slide-in-from-top-2 duration-200">
-                      <div>
-                        <label className="block text-[10px] text-slate-400 mb-1">시간 (Time)</label>
-                        <select name="time" value={inputs.time} onChange={handleInputChange} className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-2 py-2 text-xs outline-none cursor-pointer text-slate-200">
-                          <option value="">선택 안함</option>
-                          <option value="새벽">새벽</option>
-                          <option value="밤">밤</option>
-                          <option value="늦은 오후">늦은 오후</option>
-                          <option value="아침">아침</option>
-                        </select>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] text-slate-400 mb-1">날씨 (Weather)</label>
-                        <select name="weather" value={inputs.weather} onChange={handleInputChange} className="w-full bg-slate-900/50 border border-slate-600 rounded-lg px-2 py-2 text-xs outline-none cursor-pointer text-slate-200">
-                          <option value="">선택 안함</option>
-                          <option value="비">비</option>
-                          <option value="맑음">맑음</option>
-                          <option value="눈">눈</option>
-                          <option value="안개">안개</option>
-                        </select>
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div className="pt-2">
-                  <label className="flex items-center text-xs font-semibold text-pink-300 uppercase tracking-wider mb-2">
-                    <Monitor className="w-3 h-3 mr-2" /> 화면 비율
+                <div className="pt-3 pb-1">
+                  <label className="flex items-center text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">
+                    <Monitor className="w-3.5 h-3.5 mr-2" /> 화면 비율
                   </label>
                   <div className="grid grid-cols-4 gap-2">
                     {[{ label: '16:9', value: '16:9' }, { label: '9:16', value: '9:16' }, { label: '1:1', value: '1:1' }, { label: '4:5', value: '4:5' }].map((option) => (
-                      <button key={option.value} onClick={() => setInputs(prev => ({ ...prev, ratio: option.value }))} className={`py-1.5 px-1 text-xs rounded-lg border transition-all ${inputs.ratio === option.value ? 'bg-pink-500/20 border-pink-500 text-pink-300 font-bold' : 'bg-slate-900/50 border-slate-600 text-slate-400 hover:bg-slate-800'}`}>
+                      <button key={option.value} onClick={() => setInputs(prev => ({ ...prev, ratio: option.value }))} className={`py-2 px-1 text-[11px] font-medium rounded-lg border transition-all ${inputs.ratio === option.value ? 'bg-slate-200 text-slate-900 border-white shadow-lg' : 'bg-slate-900/50 border-slate-700 text-slate-400 hover:bg-slate-800'}`}>
                         {option.label}
                       </button>
                     ))}
@@ -683,87 +763,154 @@ const LofiPromptGenerator: React.FC = () => {
             </div>
 
             {/* Fixed Footer Buttons */}
-            <div className="absolute bottom-0 left-0 w-full p-4 bg-slate-900/90 backdrop-blur-md rounded-b-2xl border-t border-slate-700/50 flex flex-col gap-2 z-20">
+            <div className="absolute bottom-0 left-0 w-full p-5 bg-slate-900/95 backdrop-blur-xl rounded-b-3xl border-t border-slate-700/50 flex flex-col gap-2.5 z-20">
               <button 
                 onClick={() => handleGenerate()} 
-                className="w-full py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 rounded-xl font-bold text-white shadow-lg shadow-purple-900/30 flex items-center justify-center transition-all transform hover:scale-[1.02]"
+                disabled={isGeneratingPrompt}
+                className={`w-full py-3.5 bg-gradient-to-r from-purple-600 via-pink-600 to-red-500 bg-size-200 hover:bg-right rounded-xl font-black text-white shadow-lg shadow-purple-900/40 flex items-center justify-center transition-all duration-500 transform ${!isGeneratingPrompt ? 'hover:scale-[1.01] hover:shadow-purple-500/20' : 'opacity-80 cursor-wait'}`}
               >
-                <Play className="w-4 h-4 mr-2 fill-current" />
-                프롬프트 생성 (Generate Prompt)
+                {isGeneratingPrompt ? (
+                  <>
+                     <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                     <span>프롬프트 번역 및 생성 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2 fill-current" />
+                    <span>프롬프트 생성 (GENERATE)</span>
+                  </>
+                )}
               </button>
               
               <button 
                 onClick={handleAutoGenerate} 
                 disabled={isAutoGenerating}
-                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-xl font-semibold text-indigo-300 flex items-center justify-center transition-all text-sm"
+                className="w-full py-3 bg-slate-800/80 hover:bg-slate-700 border border-slate-600/50 rounded-xl font-bold text-indigo-300 flex items-center justify-center transition-all text-sm group"
+                title="프리셋에 없는 독특하고 창의적인 컨셉을 랜덤으로 생성합니다."
               >
                 {isAutoGenerating ? (
-                  <RefreshCw className="w-3 h-3 mr-2 animate-spin" />
+                  <RefreshCw className="w-3.5 h-3.5 mr-2 animate-spin" />
                 ) : (
-                  <Dice5 className="w-4 h-4 mr-2" />
+                  <Dice5 className="w-4 h-4 mr-2 group-hover:rotate-180 transition-transform duration-500" />
                 )}
-                {isAutoGenerating ? "AI가 상상하는 중..." : "AI 자동 생성 (Random Creative)"}
+                {isAutoGenerating ? "AI가 상상하는 중..." : "AI 랜덤 창작 (Unique & Creative)"}
               </button>
             </div>
           </div>
         </div>
 
+        {/* Right Result Area */}
         <div className="xl:col-span-7 flex flex-col space-y-4">
-          <div className="bg-slate-950 rounded-2xl border border-slate-800 p-1 shadow-2xl relative overflow-hidden group flex-1 flex flex-col max-h-[90vh]">
-             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-blue-500 opacity-70"></div>
-             <div className="h-full bg-slate-900 rounded-xl p-6 flex flex-col relative z-10">
-                <div className="flex justify-between items-center mb-4 flex-shrink-0">
-                  <h2 className="text-sm font-bold text-slate-300 uppercase tracking-widest flex items-center">
-                    <Terminal className="w-4 h-4 mr-2" /> Generated Prompt
-                  </h2>
-                  <div className="text-xs text-slate-500 font-mono">Total Length: {generatedPrompt.length}</div>
-                </div>
-
-                <div className="flex-1 bg-black/40 rounded-lg p-4 mb-4 border border-slate-700/50 font-mono text-sm leading-relaxed overflow-y-auto custom-scrollbar text-gray-300">
-                  {generatedPrompt ? (
-                    <>
-                      <span className="text-green-400 font-bold select-none">gemini &gt; </span>
-                      {generatedPrompt}
-                      <span className="animate-pulse inline-block w-2 h-4 ml-1 bg-green-500 align-middle"></span>
-                    </>
-                  ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-3">
-                      <Terminal className="w-8 h-8 opacity-50" />
-                      <p className="text-center text-xs">
-                        좌측 옵션을 선택하고<br/>
-                        <span className="text-purple-400 font-bold">"프롬프트 생성"</span> 버튼을 눌러주세요.
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex-shrink-0 space-y-4">
-                  <button onClick={copyToClipboard} disabled={!generatedPrompt} className={`w-full py-3 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg ${copied ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-purple-600 hover:bg-purple-500 text-white border border-purple-500 disabled:opacity-50 disabled:cursor-not-allowed'}`}>
-                    {copied ? <><Save className="w-4 h-4" /><span>복사 완료!</span></> : <><Copy className="w-4 h-4" /><span>프롬프트 복사</span></>}
-                  </button>
-
-                  <div className="relative">
-                     <input type="text" value={userFeedback} onChange={(e) => setUserFeedback(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && !isRefining && handleSmartFeedback()} disabled={isRefining || !generatedPrompt} placeholder="AI에게 수정 요청 (예: 좀 더 어둡게, 사람 빼줘, 비 오게 해줘)" className="w-full bg-slate-800/50 border border-slate-600 rounded-lg pl-4 pr-12 py-3 text-xs focus:border-purple-500 outline-none text-white placeholder-slate-500 disabled:opacity-50" />
-                     <button onClick={handleSmartFeedback} disabled={isRefining || !generatedPrompt} className={`absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md transition-all ${isRefining ? 'text-slate-500' : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500 hover:text-white'}`}>
-                       {isRefining ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
-                     </button>
+          <div className="bg-slate-950/80 backdrop-blur-xl rounded-3xl border border-slate-800 shadow-2xl relative overflow-hidden group flex-1 flex flex-col max-h-[92vh]">
+             {/* Decorative Gradient Line */}
+             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 via-pink-500 to-orange-500 opacity-60"></div>
+             
+             {/* Content Container */}
+             <div className="h-full bg-slate-900/40 rounded-3xl p-6 flex flex-col relative z-10">
+                <div className="flex justify-between items-center mb-4 flex-shrink-0 border-b border-white/5 pb-4">
+                  <div className="flex items-center space-x-4">
+                    <button 
+                      onClick={() => setShowHistory(false)}
+                      className={`text-sm font-bold uppercase tracking-widest flex items-center transition-colors ${!showHistory ? 'text-white border-b-2 border-purple-500 pb-1' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      <Terminal className="w-4 h-4 mr-2" /> Prompt
+                    </button>
+                    <button 
+                      onClick={() => setShowHistory(true)}
+                      className={`text-sm font-bold uppercase tracking-widest flex items-center transition-colors ${showHistory ? 'text-white border-b-2 border-blue-500 pb-1' : 'text-slate-500 hover:text-slate-300'}`}
+                    >
+                      <History className="w-4 h-4 mr-2" /> History
+                      {history.length > 0 && <span className="ml-2 bg-slate-800 text-slate-400 text-[10px] px-1.5 py-0.5 rounded-full">{history.length}</span>}
+                    </button>
                   </div>
+                  {!showHistory && <div className="text-xs text-slate-600 font-mono">Len: {generatedPrompt.length}</div>}
                 </div>
+
+                {showHistory ? (
+                   // History View
+                   <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-3">
+                     {history.length === 0 ? (
+                       <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-3 opacity-60">
+                         <History className="w-12 h-12" />
+                         <p className="text-sm">저장된 히스토리가 없습니다.</p>
+                       </div>
+                     ) : (
+                       history.map((item) => (
+                         <div key={item.id} className="bg-slate-900/60 border border-slate-700/50 rounded-xl p-4 hover:border-blue-500/30 transition-colors group">
+                           <div className="flex justify-between items-start mb-2">
+                             <div className="flex items-center text-[10px] text-slate-500 space-x-2">
+                               <Clock className="w-3 h-3" />
+                               <span>{new Date(item.timestamp).toLocaleString()}</span>
+                               <span className="bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded text-[9px] uppercase">{item.inputs.mood || 'N/A'}</span>
+                             </div>
+                             <button onClick={() => restoreHistory(item)} className="text-xs bg-blue-500/10 text-blue-400 hover:bg-blue-500 hover:text-white px-2 py-1 rounded transition-colors">
+                               복원
+                             </button>
+                           </div>
+                           <p className="text-xs text-slate-300 font-mono line-clamp-2 opacity-80 group-hover:opacity-100">{item.prompt}</p>
+                         </div>
+                       ))
+                     )}
+                   </div>
+                ) : (
+                   // Prompt View
+                   <>
+                    <div className="flex-1 bg-black/40 rounded-xl p-5 mb-4 border border-slate-700/50 font-mono text-sm leading-relaxed overflow-y-auto custom-scrollbar text-slate-300 shadow-inner relative">
+                      {generatedPrompt ? (
+                        <>
+                          <div className="absolute top-2 right-2 flex space-x-1">
+                             <div className="w-2.5 h-2.5 rounded-full bg-red-500/50"></div>
+                             <div className="w-2.5 h-2.5 rounded-full bg-yellow-500/50"></div>
+                             <div className="w-2.5 h-2.5 rounded-full bg-green-500/50"></div>
+                          </div>
+                          <span className="text-green-500 font-bold select-none mr-2">$</span>
+                          {generatedPrompt}
+                          <span className="animate-pulse inline-block w-2 h-4 ml-1 bg-green-500/80 align-middle"></span>
+                        </>
+                      ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-slate-600 space-y-4">
+                          <div className="p-4 bg-slate-900/50 rounded-full border border-slate-800">
+                             <Terminal className="w-8 h-8 opacity-50" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-medium text-slate-500 mb-1">프롬프트가 생성되지 않았습니다</p>
+                            <p className="text-xs text-slate-600">
+                              좌측 옵션을 선택하고 <span className="text-purple-400 font-bold">생성 버튼</span>을 눌러주세요.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex-shrink-0 space-y-4">
+                      <button onClick={copyToClipboard} disabled={!generatedPrompt} className={`w-full py-3.5 rounded-xl font-bold text-sm transition-all duration-300 flex items-center justify-center space-x-2 shadow-lg ${copied ? 'bg-green-500/20 text-green-400 border border-green-500/50' : 'bg-purple-600 hover:bg-purple-500 text-white border border-purple-500/50 hover:shadow-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none'}`}>
+                        {copied ? <><Save className="w-4 h-4" /><span>클립보드에 복사 완료!</span></> : <><Copy className="w-4 h-4" /><span>프롬프트 복사 (Copy Prompt)</span></>}
+                      </button>
+
+                      <div className="relative group">
+                         <input type="text" value={userFeedback} onChange={(e) => setUserFeedback(e.target.value)} onKeyPress={(e) => e.key === 'Enter' && !isRefining && handleSmartFeedback()} disabled={isRefining || !generatedPrompt} placeholder="AI에게 수정 요청 (예: 좀 더 어둡게, 사람 빼줘, 비 오게 해줘)" className="w-full bg-slate-800/50 border border-slate-600/50 rounded-xl pl-4 pr-12 py-3.5 text-xs focus:border-purple-500 focus:bg-slate-800 outline-none text-white placeholder-slate-500 disabled:opacity-50 transition-all" />
+                         <button onClick={handleSmartFeedback} disabled={isRefining || !generatedPrompt} className={`absolute right-2 top-1/2 -translate-y-1/2 p-2 rounded-lg transition-all ${isRefining ? 'text-slate-500' : 'bg-purple-500/20 text-purple-400 hover:bg-purple-500 hover:text-white'}`}>
+                           {isRefining ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Wand2 className="w-3.5 h-3.5" />}
+                         </button>
+                      </div>
+                    </div>
+                   </>
+                )}
              </div>
           </div>
 
-          <div className="bg-slate-800/30 rounded-xl border border-slate-700/50 p-5 flex-shrink-0">
-            <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center">
-              <MessageSquare className="w-3 h-3 mr-2" /> 프롬프트 설명 (Korean Analysis)
+          <div className="bg-slate-900/60 backdrop-blur-md rounded-2xl border border-slate-700/30 p-5 flex-shrink-0 shadow-xl">
+            <h3 className="text-xs font-bold text-slate-400 uppercase mb-3 flex items-center tracking-wider">
+              <MessageSquare className="w-3.5 h-3.5 mr-2" /> 프롬프트 설명 (Korean Analysis)
             </h3>
-            <div className="bg-slate-900/50 rounded-lg p-4 text-sm text-slate-300 leading-relaxed border border-slate-700/30 whitespace-pre-line min-h-[100px]">
-              {koreanExplanation || <span className="text-slate-600">프롬프트가 생성되면 이곳에 한국어 설명이 표시됩니다.</span>}
+            <div className="bg-slate-950/50 rounded-xl p-4 text-sm text-slate-300 leading-relaxed border border-white/5 whitespace-pre-line min-h-[100px] shadow-inner">
+              {koreanExplanation || <span className="text-slate-600 italic">프롬프트가 생성되면 이곳에 상세 설명이 표시됩니다.</span>}
             </div>
             
             <div className="mt-3 flex flex-wrap gap-2">
               {inputs.customModifiers.map((mod, idx) => (
-                <span key={idx} className="text-[10px] bg-purple-500/10 text-purple-300 px-2 py-1 rounded-full border border-purple-500/20 truncate max-w-[300px]" title={mod}>
-                  AI Refined: {mod}
+                <span key={idx} className="text-[10px] bg-purple-500/10 text-purple-300 px-2.5 py-1 rounded-full border border-purple-500/20 truncate max-w-[300px] hover:bg-purple-500/20 transition-colors cursor-help" title={mod}>
+                  ✨ {mod}
                 </span>
               ))}
             </div>
